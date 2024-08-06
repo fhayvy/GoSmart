@@ -3,9 +3,11 @@
 ;; Smart Contract Insurance
 
 ;; Define the contract
+;; Defining the contract
 (define-data-var insurance-pool uint u0)
 (define-map insured-contracts principal uint)
 (define-map claims principal uint)
+
 
 ;; Function to purchase insurance
 (define-public (purchase-insurance (amount uint))

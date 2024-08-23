@@ -32,8 +32,10 @@
 
 ;; Function to file a claim
 (define-public (file-claim (claim-amount uint))
-  (let ((caller tx-sender)
-        (insured-amount (default-to u0 (map-get? insured-contracts caller))))
+  (let (
+    (caller tx-sender)
+    (insured-amount (default-to u0 (map-get? insured-contracts caller)))
+  )
     (asserts! (> claim-amount u0) ERR_ZERO_AMOUNT)
     (asserts! (is-some (map-get? insured-contracts caller)) ERR_NOT_INSURED)
     (asserts! (>= insured-amount claim-amount) ERR_INSUFFICIENT_FUNDS)
@@ -43,25 +45,32 @@
 
 ;; Function to approve and pay out a claim
 (define-public (approve-claim (claimant principal) (claim-amount uint))
-  (let ((claim-data (unwrap! (map-get? claims { claimant: claimant, amount: claim-amount }) ERR_CLAIM_NOT_FOUND)))
+  (let (
+    (claim-key { claimant: claimant, amount: claim-amount })
+    (claim-data (unwrap! (map-get? claims claim-key) ERR_CLAIM_NOT_FOUND))
+  )
     (asserts! (is-eq tx-sender (var-get contract-owner)) ERR_UNAUTHORIZED)
     (asserts! (is-eq (get status claim-data) "pending") ERR_CLAIM_ALREADY_PROCESSED)
     (asserts! (<= claim-amount (var-get insurance-pool)) ERR_INSUFFICIENT_FUNDS)
     (asserts! (> (var-get insurance-pool) u0) ERR_POOL_EMPTY)
+    (asserts! (is-some (map-get? insured-contracts claimant)) ERR_NOT_INSURED)
     (match (as-contract (stx-transfer? claim-amount tx-sender claimant))
       success (begin
         (var-set insurance-pool (- (var-get insurance-pool) claim-amount))
-        (map-delete claims { claimant: claimant, amount: claim-amount })
+        (map-delete claims claim-key)
         (map-delete insured-contracts claimant)
         (ok true))
       error (err error))))
 
 ;; Function to reject a claim
 (define-public (reject-claim (claimant principal) (claim-amount uint))
-  (let ((claim-data (unwrap! (map-get? claims { claimant: claimant, amount: claim-amount }) ERR_CLAIM_NOT_FOUND)))
+  (let (
+    (claim-key { claimant: claimant, amount: claim-amount })
+    (claim-data (unwrap! (map-get? claims claim-key) ERR_CLAIM_NOT_FOUND))
+  )
     (asserts! (is-eq tx-sender (var-get contract-owner)) ERR_UNAUTHORIZED)
     (asserts! (is-eq (get status claim-data) "pending") ERR_CLAIM_ALREADY_PROCESSED)
-    (map-set claims { claimant: claimant, amount: claim-amount } { status: "rejected" })
+    (map-set claims claim-key { status: "rejected" })
     (ok true)))
 
 ;; Function to change the contract owner
@@ -88,3 +97,4 @@
   (match (map-get? claims { claimant: claimant, amount: claim-amount })
     claim-data (ok (get status claim-data))
     ERR_CLAIM_NOT_FOUND))
+    

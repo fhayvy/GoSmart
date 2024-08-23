@@ -1,12 +1,16 @@
+;; Smart Contract Insurance
+
 ;; Define error constants
 (define-constant ERR_INVALID_AMOUNT u100)
 (define-constant ERR_INSUFFICIENT_FUNDS u101)
 (define-constant ERR_CLAIM_NOT_FOUND u102)
 (define-constant ERR_UNAUTHORIZED u103)
 (define-constant ERR_ALREADY_INSURED u104)
+(define-constant ERR_INVALID_PRINCIPAL u105)
 
 ;; Define the contract
 (define-data-var insurance-pool uint u0)
+(define-data-var contract-owner principal tx-sender)
 (define-map insured-contracts principal uint)
 (define-map claims principal uint)
 
@@ -38,8 +42,7 @@
 ;; Function to approve and pay out a claim
 (define-public (approve-claim (claimant principal))
   (let ((claim-amount (default-to u0 (map-get? claims claimant))))
-    (if (is-eq tx-sender (contract-caller))
-        (err ERR_UNAUTHORIZED)
+    (if (is-eq tx-sender (var-get contract-owner))
         (if (<= claim-amount u0)
             (err ERR_CLAIM_NOT_FOUND)
             (if (> claim-amount (var-get insurance-pool))
@@ -49,7 +52,15 @@
                   (var-set insurance-pool (- (var-get insurance-pool) claim-amount))
                   (map-delete claims claimant)
                   (map-delete insured-contracts claimant)
-                  (ok true)))))))
+                  (ok true))))
+        (err ERR_UNAUTHORIZED))))
+
+;; Function to change the contract owner
+(define-public (change-contract-owner (new-owner principal))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) (err ERR_UNAUTHORIZED))
+    (asserts! (not (is-eq new-owner 'SP000000000000000000002Q6VF78)) (err ERR_INVALID_PRINCIPAL))
+    (ok (var-set contract-owner new-owner))))
 
 ;; Function to get the current insurance pool balance
 (define-read-only (get-pool-balance)
@@ -68,4 +79,3 @@
 ;; Function to get the claim amount for a contract
 (define-read-only (get-claim-amount (contract principal))
   (ok (default-to u0 (map-get? claims contract))))
-  

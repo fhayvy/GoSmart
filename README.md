@@ -42,14 +42,5 @@ To use this smart contract, deploy it to the Stacks blockchain and interact with
 - The `approve-claim` function should be properly secured to prevent unauthorized claim approvals.
 - Consider implementing additional checks and balances, such as claim verification mechanisms and tiered insurance plans.
 
-## License
-
-[Insert your chosen license here]
-
-## Contributing
-
-[Insert contribution guidelines here]
-
-## Contact
-
-[Insert your contact information or support channels here]
+## Author 
+Favour Chiamaka Eze

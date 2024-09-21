@@ -11,12 +11,16 @@
 (define-constant ERR_ZERO_AMOUNT (err u107))
 (define-constant ERR_CLAIM_ALREADY_PROCESSED (err u108))
 (define-constant ERR_POOL_EMPTY (err u109))
+(define-constant ERR_CLAIM_NOT_EXPIRED (err u110))
 
 ;; Define the contract
 (define-data-var insurance-pool uint u0)
 (define-data-var contract-owner principal tx-sender)
 (define-map insured-contracts principal uint)
-(define-map claims { claimant: principal, amount: uint } { status: (string-ascii 20) })
+(define-map claims { claimant: principal, amount: uint } { status: (string-ascii 20), timestamp: uint })
+
+;; Define the claim expiration period (e.g., 30 days in blocks, assuming 10-minute block times)
+(define-constant CLAIM_EXPIRATION_PERIOD u4320)
 
 ;; Function to purchase insurance
 (define-public (purchase-insurance (amount uint))
@@ -41,8 +45,8 @@
     (asserts! (is-some (map-get? insured-contracts caller)) ERR_NOT_INSURED)
     (asserts! (>= insured-amount claim-amount) ERR_INSUFFICIENT_FUNDS)
     (asserts! (is-none (map-get? claims { claimant: caller, amount: claim-amount })) ERR_CLAIM_ALREADY_PROCESSED)
-    (map-set claims { claimant: caller, amount: claim-amount } { status: "pending" })
-    (print { event: "claim-filed", claimant: caller, claim-amount: claim-amount })
+    (map-set claims { claimant: caller, amount: claim-amount } { status: "pending", timestamp: block-height })
+    (print { event: "claim-filed", claimant: caller, claim-amount: claim-amount, timestamp: block-height })
     (ok true)))
 
 ;; Function to approve and pay out a claim
@@ -56,6 +60,7 @@
     (asserts! (<= claim-amount (var-get insurance-pool)) ERR_INSUFFICIENT_FUNDS)
     (asserts! (> (var-get insurance-pool) u0) ERR_POOL_EMPTY)
     (asserts! (is-some (map-get? insured-contracts claimant)) ERR_NOT_INSURED)
+    (asserts! (< (- block-height (get timestamp claim-data)) CLAIM_EXPIRATION_PERIOD) ERR_CLAIM_NOT_EXPIRED)
     (match (as-contract (stx-transfer? claim-amount tx-sender claimant))
       success (begin
         (var-set insurance-pool (- (var-get insurance-pool) claim-amount))
@@ -73,9 +78,24 @@
   )
     (asserts! (is-eq tx-sender (var-get contract-owner)) ERR_UNAUTHORIZED)
     (asserts! (is-eq (get status claim-data) "pending") ERR_CLAIM_ALREADY_PROCESSED)
-    (map-set claims claim-key { status: "rejected" })
+    (asserts! (< (- block-height (get timestamp claim-data)) CLAIM_EXPIRATION_PERIOD) ERR_CLAIM_NOT_EXPIRED)
+    (map-set claims claim-key { status: "rejected", timestamp: (get timestamp claim-data) })
     (print { event: "claim-rejected", claimant: claimant, claim-amount: claim-amount })
     (ok true)))
+
+;; Function to check and expire a single claim
+(define-public (check-and-expire-claim (claimant principal) (claim-amount uint))
+  (let (
+    (claim-key { claimant: claimant, amount: claim-amount })
+    (claim-data (unwrap! (map-get? claims claim-key) ERR_CLAIM_NOT_FOUND))
+  )
+    (if (and (is-eq (get status claim-data) "pending")
+             (>= (- block-height (get timestamp claim-data)) CLAIM_EXPIRATION_PERIOD))
+        (begin
+          (map-set claims claim-key { status: "expired", timestamp: (get timestamp claim-data) })
+          (print { event: "claim-expired", claimant: claimant, claim-amount: claim-amount })
+          (ok true))
+        (ok false))))
 
 ;; Function to change the contract owner
 (define-public (change-contract-owner (new-owner principal))
@@ -100,5 +120,5 @@
 ;; Function to get the claim status for a contract
 (define-read-only (get-claim-status (claimant principal) (claim-amount uint))
   (match (map-get? claims { claimant: claimant, amount: claim-amount })
-    claim-data (ok (get status claim-data))
+    claim-data (ok { status: (get status claim-data), timestamp: (get timestamp claim-data) })
     ERR_CLAIM_NOT_FOUND))

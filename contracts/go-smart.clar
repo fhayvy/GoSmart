@@ -12,6 +12,7 @@
 (define-constant ERR_CLAIM_ALREADY_PROCESSED (err u108))
 (define-constant ERR_POOL_EMPTY (err u109))
 (define-constant ERR_CLAIM_NOT_EXPIRED (err u110))
+(define-constant ERR_CLAIM_EXCEEDS_INSURED (err u111))
 
 ;; Define the contract
 (define-data-var insurance-pool uint u0)
@@ -61,24 +62,25 @@
     (claim-key { claimant: claimant, amount: claim-amount })
     (claim-data (unwrap! (map-get? claims claim-key) ERR_CLAIM_NOT_FOUND))
     (pool-balance (var-get insurance-pool))
-    (payout-amount (calculate-payout-amount claim-amount pool-balance))
+    (insured-amount (unwrap! (map-get? insured-contracts claimant) ERR_NOT_INSURED))
   )
     (asserts! (is-eq tx-sender (var-get contract-owner)) ERR_UNAUTHORIZED)
     (asserts! (is-eq (get status claim-data) "pending") ERR_CLAIM_ALREADY_PROCESSED)
     (asserts! (> pool-balance u0) ERR_POOL_EMPTY)
-    (asserts! (is-some (map-get? insured-contracts claimant)) ERR_NOT_INSURED)
+    (asserts! (<= claim-amount insured-amount) ERR_CLAIM_EXCEEDS_INSURED)
     (asserts! (< (- block-height (get timestamp claim-data)) CLAIM_EXPIRATION_PERIOD) ERR_CLAIM_NOT_EXPIRED)
-    (match (as-contract (stx-transfer? payout-amount tx-sender claimant))
-      success (begin
-        (var-set insurance-pool (- pool-balance payout-amount))
-        (if (< payout-amount claim-amount)
-            (map-set claims claim-key { status: "partially-paid", timestamp: block-height, paid-amount: payout-amount })
-            (begin
-              (map-delete claims claim-key)
-              (map-delete insured-contracts claimant)))
-        (print { event: "claim-approved", claimant: claimant, claim-amount: claim-amount, payout-amount: payout-amount })
-        (ok payout-amount))
-      error (err error))))
+    (let ((payout-amount (calculate-payout-amount claim-amount pool-balance)))
+      (match (as-contract (stx-transfer? payout-amount tx-sender claimant))
+        success (begin
+          (var-set insurance-pool (- pool-balance payout-amount))
+          (if (< payout-amount claim-amount)
+              (map-set claims claim-key { status: "partially-paid", timestamp: block-height, paid-amount: payout-amount })
+              (begin
+                (map-delete claims claim-key)
+                (map-delete insured-contracts claimant)))
+          (print { event: "claim-approved", claimant: claimant, claim-amount: claim-amount, payout-amount: payout-amount })
+          (ok payout-amount))
+        error (err error)))))
 
 ;; Function to reject a claim
 (define-public (reject-claim (claimant principal) (claim-amount uint))

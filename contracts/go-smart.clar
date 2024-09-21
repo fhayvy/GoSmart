@@ -27,6 +27,7 @@
       success (begin
         (var-set insurance-pool (+ (var-get insurance-pool) amount))
         (map-set insured-contracts caller amount)
+        (print { event: "insurance-purchased", insured-amount: amount, buyer: caller })
         (ok true))
       error (err error))))
 
@@ -41,6 +42,7 @@
     (asserts! (>= insured-amount claim-amount) ERR_INSUFFICIENT_FUNDS)
     (asserts! (is-none (map-get? claims { claimant: caller, amount: claim-amount })) ERR_CLAIM_ALREADY_PROCESSED)
     (map-set claims { claimant: caller, amount: claim-amount } { status: "pending" })
+    (print { event: "claim-filed", claimant: caller, claim-amount: claim-amount })
     (ok true)))
 
 ;; Function to approve and pay out a claim
@@ -59,6 +61,7 @@
         (var-set insurance-pool (- (var-get insurance-pool) claim-amount))
         (map-delete claims claim-key)
         (map-delete insured-contracts claimant)
+        (print { event: "claim-approved", claimant: claimant, claim-amount: claim-amount })
         (ok true))
       error (err error))))
 
@@ -71,6 +74,7 @@
     (asserts! (is-eq tx-sender (var-get contract-owner)) ERR_UNAUTHORIZED)
     (asserts! (is-eq (get status claim-data) "pending") ERR_CLAIM_ALREADY_PROCESSED)
     (map-set claims claim-key { status: "rejected" })
+    (print { event: "claim-rejected", claimant: claimant, claim-amount: claim-amount })
     (ok true)))
 
 ;; Function to change the contract owner
@@ -78,6 +82,7 @@
   (begin
     (asserts! (is-eq tx-sender (var-get contract-owner)) ERR_UNAUTHORIZED)
     (asserts! (not (is-eq new-owner 'SP000000000000000000002Q6VF78)) ERR_INVALID_PRINCIPAL)
+    (print { event: "contract-owner-changed", old-owner: (var-get contract-owner), new-owner: new-owner })
     (ok (var-set contract-owner new-owner))))
 
 ;; Function to get the current insurance pool balance
@@ -97,4 +102,3 @@
   (match (map-get? claims { claimant: claimant, amount: claim-amount })
     claim-data (ok (get status claim-data))
     ERR_CLAIM_NOT_FOUND))
-    
